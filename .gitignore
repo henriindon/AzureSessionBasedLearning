@@ -1,6 +1,4 @@
-/AzureSessionBasedLearning/dotNetMessageSessionListener/bin
-/AzureSessionBasedLearning/dotNetMessageSessionListener/obj
-/AzureSessionBasedLearning/dotNetMessageSessionSender/bin
-/AzureSessionBasedLearning/dotNetMessageSessionSender/obj
+**/bin/
+**/obj/
 /AzureMessageSessionLearning
 /.vs
