@@ -1,40 +1,51 @@
-﻿using Azure.Messaging.ServiceBus;
+﻿using Azure.Core.Diagnostics;
+using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics.Tracing;
 
 namespace dotnetMessageSessionSender
 {
-    internal class Program
+    internal class SenderProgram
     {
         static async Task Main(string[] args)
         {
             string fruitName = args.Length == 0 ? "Banana" : args[0];
 
             var builder = new ConfigurationBuilder()
-                .AddUserSecrets<Program>();
+                .AddUserSecrets<SenderProgram>()
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
 
             var configuration = builder.Build();
 
-            string connectionString = configuration["CodeyGrove:ServiceBus:ConnectionString"];
-            string topicName = configuration["CodeyGrove:ServiceBus:TopicName"];
+            string connectionString = configuration["ServiceBus:ConnectionString"];
+            string topicName = configuration["ServiceBus:TopicName"];
 
-            using var loggerFactory = LoggerFactory.Create(loggingBuilder =>
-            {
-                loggingBuilder.SetMinimumLevel(LogLevel.Debug);
-                loggingBuilder.AddFilter("Azure.Messaging.ServiceBus", LogLevel.Debug);
-                loggingBuilder.AddSimpleConsole(options =>
+            var services = new ServiceCollection();
+            services.AddLogging(loggingBuilder => {
+                loggingBuilder
+                .AddSimpleConsole(options =>
                 {
                     options.IncludeScopes = true;
                     options.TimestampFormat = "yyyy-MM-dd HH:mm:ss.fff ";
                 });
             });
 
-            ILogger logger = loggerFactory.CreateLogger<Program>();
+            IServiceProvider serviceProvider = services.BuildServiceProvider();
+
+            ILogger<SenderProgram> logger = serviceProvider.GetRequiredService<ILogger<SenderProgram>>();
+
+            // https://learn.microsoft.com/en-us/dotnet/azure/sdk/logging#configure-custom-logging
+            using AzureEventSourceListener listener = new AzureEventSourceListener((e, message) => Console.WriteLine($"{DateTime.Now} {message}"), level: EventLevel.Verbose);
 
             using (logger.BeginScope("Application: {FruitName} Sender", fruitName))
             {
                 await SendMessageAsync(connectionString, topicName, fruitName, logger);
             }
+
+            Console.WriteLine("Sender complete. Press any key to continue .....");
+            Console.ReadLine();
         }
 
         static async Task SendMessageAsync(string connectionString, string topicName, string sessionId, ILogger logger)
