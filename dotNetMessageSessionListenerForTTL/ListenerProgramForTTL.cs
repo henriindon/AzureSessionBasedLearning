@@ -5,14 +5,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics.Tracing;
 
-class ListenerProgram
+class ListenerProgramForTTL
 {
     static async Task Main(string[] args)
     {
-        string appName = (args.Length == 0) ? "Grovey One" : args[0];
+        string appName = (args.Length == 0) ? "TTL Testing Listener" : args[0];
 
         var builder = new ConfigurationBuilder()
-            .AddUserSecrets<ListenerProgram>()
+            .AddUserSecrets<ListenerProgramForTTL>()
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
 
         var configuration = builder.Build();
@@ -33,10 +33,10 @@ class ListenerProgram
 
         IServiceProvider serviceProvider = services.BuildServiceProvider();
 
-        ILogger<ListenerProgram> logger = serviceProvider.GetRequiredService<ILogger<ListenerProgram>>();
+        ILogger<ListenerProgramForTTL> logger = serviceProvider.GetRequiredService<ILogger<ListenerProgramForTTL>>();
 
         // https://learn.microsoft.com/en-us/dotnet/azure/sdk/logging#configure-custom-logging
-        using AzureEventSourceListener listener = new AzureEventSourceListener((e, message) => Console.WriteLine($"{DateTime.Now} {message}"), level: EventLevel.Verbose);
+        using AzureEventSourceListener listener = new AzureEventSourceListener((e, message) =>   Console.WriteLine($"{DateTime.Now} {message}"), level: EventLevel.Verbose);
 
         using (logger.BeginScope("Application: {AppName} Listener", appName))
         {
@@ -50,9 +50,11 @@ class ListenerProgram
         {
             RetryOptions = new ServiceBusRetryOptions
             {
-                Mode = ServiceBusRetryMode.Fixed,                   
+                Mode = ServiceBusRetryMode.Fixed,                
+                MaxRetries = 2,                
                 Delay = TimeSpan.FromSeconds(5),
-                MaxDelay = TimeSpan.FromSeconds(10)
+                MaxDelay = TimeSpan.FromSeconds(10),
+                TryTimeout = TimeSpan.FromSeconds(120)
             },
             TransportType = ServiceBusTransportType.AmqpTcp
         };
@@ -63,8 +65,7 @@ class ListenerProgram
             {
                 AutoCompleteMessages = false,
                 MaxConcurrentSessions = 1,                
-                MaxConcurrentCallsPerSession = 1,
-                MaxAutoLockRenewalDuration = TimeSpan.Zero
+                MaxConcurrentCallsPerSession = 1
             };
 
             ServiceBusSessionProcessor processor = client.CreateSessionProcessor(topicName, subscriptionName, processorOptions);
@@ -73,20 +74,16 @@ class ListenerProgram
             {
                 string message = args.Message.Body.ToString();
                 var fruitName = args.Message.SessionId;
-                
-                if (fruitName == "Banana")
-                {
-                    logger.LogInformation($"Start processing {fruitName} : {message} for about 2 minutes");
 
-                    // Simulate long running process
-                    await Task.Delay(TimeSpan.FromMinutes(5));
+                logger.LogInformation($"Processing: {message} -- {args.Message.ExpiresAt.ToLocalTime()}");
 
-                    logger.LogInformation($"Complete processing message from fruit called \"{fruitName}\": {message}");
-                }
-                else
-                    await Task.Delay(1000);
+                Random randomDelay = new Random();
 
-                await args.CompleteMessageAsync(args.Message);
+                await Task.Delay(TimeSpan.FromSeconds(3));
+
+                logger.LogInformation($"Abandon processing: {message}");
+
+                await args.AbandonMessageAsync(args.Message);
             };
 
             processor.ProcessErrorAsync += args =>

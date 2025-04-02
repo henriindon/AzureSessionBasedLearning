@@ -41,33 +41,42 @@ namespace dotnetMessageSessionSender
 
             using (logger.BeginScope("Application: {FruitName} Sender", fruitName))
             {
-                await SendMessageAsync(connectionString, topicName, fruitName, logger);
+                await SendMessageAsync(connectionString, topicName, fruitName, logger, TimeSpan.FromMinutes(1));
+
+                //await Task.Delay(TimeSpan.FromSeconds(5));
+
+                //await SendMessageAsync(connectionString, topicName, fruitName, logger, TimeSpan.FromMinutes(5));
             }
 
             Console.WriteLine("Sender complete. Press any key to continue .....");
             Console.ReadLine();
         }
 
-        static async Task SendMessageAsync(string connectionString, string topicName, string sessionId, ILogger logger)
+        static async Task SendMessageAsync(string connectionString, string topicName, string sessionId, ILogger logger, TimeSpan ttl)
         {
             await using (ServiceBusClient client = new ServiceBusClient(connectionString))
             {
                 ServiceBusSender sender = client.CreateSender(topicName);
 
-                for (int i = 0; i < 10; i++)
+                for (int i = 0; i < 30; i++)
                 {
-                    string messageBody = $"Message {i}";
+                    string messageBody = $"[{DateTime.Now}] - Message {Guid.NewGuid()}";
                     ServiceBusMessage message = new ServiceBusMessage(messageBody)
                     {
-                        SessionId = sessionId
+                        SessionId = sessionId,
+                        TimeToLive = ttl,
                     };
 
                     logger.LogInformation($"Sending message: {messageBody} with session ID: {sessionId}");
                     await sender.SendMessageAsync(message);
-                }
 
-                logger.LogInformation("All messages sent.");
+                    await Task.Delay(TimeSpan.FromSeconds(1));
+                }
             }
+
+            logger.LogInformation("-----------------------------------------------------");
+            logger.LogInformation("-----------------------------------------------------");
+            logger.LogInformation($"Sender completed sending messages with session ID: {sessionId}");
         }
     }
 }
