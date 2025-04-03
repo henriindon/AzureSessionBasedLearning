@@ -1,5 +1,6 @@
 ﻿using Azure.Core.Diagnostics;
 using Azure.Messaging.ServiceBus;
+using Microsoft.Azure.Amqp.Framing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -12,6 +13,7 @@ namespace dotnetMessageSessionSender
         static async Task Main(string[] args)
         {
             string fruitName = args.Length == 0 ? "Banana" : args[0];
+            string sessionStateTesting = args.Length != 2 ? "false" : args[1];
 
             var builder = new ConfigurationBuilder()
                 .AddUserSecrets<SenderProgram>()
@@ -41,11 +43,22 @@ namespace dotnetMessageSessionSender
 
             using (logger.BeginScope("Application: {FruitName} Sender", fruitName))
             {
-                await SendMessageAsync(connectionString, topicName, fruitName, logger, TimeSpan.FromMinutes(1));
+                if (sessionStateTesting == "true")
+                {
+                    for (int i = 0; i < 15; i++)
+                    {
+                        await SendMessageForSessionStateTestingAsync(connectionString, topicName, i.ToString(), logger);
+                        await Task.Delay(TimeSpan.FromMinutes(1));
+                    }
+                }
+                else
+                {
+                    await SendMessageAsync(connectionString, topicName, fruitName, logger, TimeSpan.FromMinutes(1));
 
-                //await Task.Delay(TimeSpan.FromSeconds(5));
+                    //await Task.Delay(TimeSpan.FromSeconds(5));
 
-                //await SendMessageAsync(connectionString, topicName, fruitName, logger, TimeSpan.FromMinutes(5));
+                    //await SendMessageAsync(connectionString, topicName, fruitName, logger, TimeSpan.FromMinutes(5));
+                }
             }
 
             Console.WriteLine("Sender complete. Press any key to continue .....");
@@ -72,6 +85,27 @@ namespace dotnetMessageSessionSender
 
                     await Task.Delay(TimeSpan.FromSeconds(1));
                 }
+            }
+
+            logger.LogInformation("-----------------------------------------------------");
+            logger.LogInformation("-----------------------------------------------------");
+            logger.LogInformation($"Sender completed sending messages with session ID: {sessionId}");
+        }
+
+        static async Task SendMessageForSessionStateTestingAsync(string connectionString, string topicName, string sessionId, ILogger logger)
+        {
+            await using (ServiceBusClient client = new ServiceBusClient(connectionString))
+            {
+                ServiceBusSender sender = client.CreateSender(topicName);
+
+                string messageBody = $"[{DateTime.Now}] - Message {Guid.NewGuid()}";
+                ServiceBusMessage message = new ServiceBusMessage(messageBody)
+                {
+                    SessionId = sessionId
+                };
+
+                logger.LogInformation($"Sending message: {messageBody} with session ID: {sessionId}");
+                await sender.SendMessageAsync(message);
             }
 
             logger.LogInformation("-----------------------------------------------------");
